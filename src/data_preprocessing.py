@@ -24,6 +24,7 @@ def load_data(path=None):
 def preprocess(df):
     """Clean the dataset and remove extreme yield outliers."""
     df = df.dropna()
+    # Trim the target distribution to reduce the influence of extreme values.
     q_low = df['hg/ha_yield'].quantile(0.01)
     q_high = df['hg/ha_yield'].quantile(0.99)
     df = df[(df['hg/ha_yield'] >= q_low) & (df['hg/ha_yield'] <= q_high)]
