@@ -1,0 +1,85 @@
+"""Data preprocessing utilities for the crop yield prediction models."""
+
+from typing import Dict, Optional, Tuple
+
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+import joblib
+import os
+
+DATA_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'yield_df.csv')
+MODELS_DIR = os.path.join(os.path.dirname(__file__), '..', 'models')
+
+FEATURE_COLUMNS = ['Area', 'Item', 'Year', 'average_rain_fall_mm_per_year',
+                   'pesticides_tonnes', 'avg_temp']
+
+
+def load_data(path: Optional[str] = None) -> pd.DataFrame:
+    """Load the raw crop yield dataset and drop index helper columns if present."""
+    if path is None:
+        path = DATA_PATH
+    df = pd.read_csv(path)
+    if 'Unnamed: 0' in df.columns:
+        df.drop(columns=['Unnamed: 0'], inplace=True)
+    return df
+
+
+def preprocess(df: pd.DataFrame) -> pd.DataFrame:
+    """Clean the dataset and remove extreme yield outliers."""
+    if 'hg/ha_yield' not in df.columns:
+        raise ValueError("Expected 'hg/ha_yield' column in input dataframe.")
+
+    df = df.dropna()
+    # Trim the target distribution to reduce the influence of extreme values.
+    q_low = df['hg/ha_yield'].quantile(0.01)
+    q_high = df['hg/ha_yield'].quantile(0.99)
+    df = df[(df['hg/ha_yield'] >= q_low) & (df['hg/ha_yield'] <= q_high)]
+    return df.reset_index(drop=True)
+
+
+def encode_and_split(
+    df: pd.DataFrame, test_size: float = 0.2
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, Dict[str, LabelEncoder], StandardScaler, list]:
+    """Encode categorical features, scale inputs, and create train/test splits."""
+    le_area = LabelEncoder()
+    le_item = LabelEncoder()
+    df['Area'] = le_area.fit_transform(df['Area'])
+    df['Item'] = le_item.fit_transform(df['Item'])
+
+    encoders = {'Area': le_area, 'Item': le_item}
+
+    X = df[FEATURE_COLUMNS]
+    y = df['hg/ha_yield']
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=test_size, random_state=42
+    )
+
+    scaler = StandardScaler()
+    X_train_scaled = pd.DataFrame(
+        scaler.fit_transform(X_train), columns=FEATURE_COLUMNS, index=X_train.index
+    )
+    X_test_scaled = pd.DataFrame(
+        scaler.transform(X_test), columns=FEATURE_COLUMNS, index=X_test.index
+    )
+
+    # Persist encoders, scaler, and feature metadata for downstream components.
+    os.makedirs(MODELS_DIR, exist_ok=True)
+    joblib.dump(encoders, os.path.join(MODELS_DIR, 'encoders.pkl'))
+    joblib.dump(scaler, os.path.join(MODELS_DIR, 'scaler.pkl'))
+    joblib.dump(FEATURE_COLUMNS, os.path.join(MODELS_DIR, 'feature_names.pkl'))
+
+    return X_train_scaled, X_test_scaled, y_train, y_test, encoders, scaler, FEATURE_COLUMNS
+
+
+if __name__ == '__main__':
+    df = load_data()
+    print("Raw shape:", df.shape)
+    df = preprocess(df)
+    print("After cleaning:", df.shape)
+    X_train, X_test, y_train, y_test, enc, sc, feat = encode_and_split(df)
+    print(f"Train: {X_train.shape}, Test: {X_test.shape}")
+    print("Features:", feat)
+
