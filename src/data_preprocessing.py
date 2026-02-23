@@ -57,6 +57,7 @@ def encode_and_split(df, test_size=0.2):
         scaler.transform(X_test), columns=features, index=X_test.index
     )
 
+    # Persist encoders, scaler, and feature metadata for downstream components.
     os.makedirs(MODELS_DIR, exist_ok=True)
     joblib.dump(encoders, os.path.join(MODELS_DIR, 'encoders.pkl'))
     joblib.dump(scaler, os.path.join(MODELS_DIR, 'scaler.pkl'))
